@@ -466,4 +466,172 @@ class Transacao {
         
         return $dias;
     }
+    // ... (cole isso no final da classe Transacao, antes do '}') ...
+
+    /**
+     * CARD 1: Busca o total de todas as parcelas pendentes (Dívida Futura).
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @return float O valor total pendente
+     */
+    public function buscarTotalPendenteGeral($contexto = 'trabalho') {
+        $query = "SELECT SUM(t.valor) as total_pendente
+                  FROM " . $this->tabela . " t
+                  INNER JOIN contas c ON t.conta_id = c.id
+                  WHERE t.data_efetivacao IS NULL
+                    AND t.tipo = 'saida'
+                    AND c.is_economia = " . ($contexto == 'trabalho' ? '0' : '1');
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $resultado = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        return $resultado['total_pendente'] ?? 0;
+    }
+
+    /**
+     * GRÁFICO 2: Busca os gastos efetivados, agrupados por categoria.
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @param int $limite Quantas categorias (Top 5, Top 10)
+     * @return array [ ['nome' => 'Alimentação', 'total_gasto' => 500], ... ]
+     */
+    public function buscarGastoPorCategoria($contexto = 'trabalho', $limite = 5) {
+        $query = "SELECT 
+                    cat.nome, 
+                    SUM(t.valor) as total_gasto
+                  FROM " . $this->tabela . " t
+                  INNER JOIN categorias cat ON t.categoria_id = cat.id
+                  INNER JOIN contas c ON t.conta_id = c.id
+                  WHERE t.data_efetivacao IS NOT NULL
+                    AND t.tipo = 'saida'
+                    AND c.is_economia = " . ($contexto == 'trabalho' ? '0' : '1') . "
+                  GROUP BY cat.nome
+                  ORDER BY total_gasto DESC
+                  LIMIT " . (int)$limite;
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * GRÁFICO 3: Busca o fluxo de caixa (Entrada x Saída) dos últimos 6 meses.
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @param int $meses Quantidade de meses para trás
+     * @return array Dados formatados para Chart.js
+     */
+    public function buscarFluxoCaixaUltimosMeses($contexto = 'trabalho', $meses = 6) {
+        $query = "SELECT 
+                    YEAR(t.data_efetivacao) as ano,
+                    MONTH(t.data_efetivacao) as mes,
+                    t.tipo,
+                    SUM(t.valor) as total
+                  FROM " . $this->tabela . " t
+                  INNER JOIN contas c ON t.conta_id = c.id
+                  WHERE t.data_efetivacao IS NOT NULL
+                    AND t.data_efetivacao >= DATE_SUB(CURDATE(), INTERVAL :meses MONTH)
+                    AND c.is_economia = " . ($contexto == 'trabalho' ? '0' : '1') . "
+                  GROUP BY ano, mes, t.tipo
+                  ORDER BY ano ASC, mes ASC";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':meses', $meses, PDO::PARAM_INT);
+        $stmt->execute();
+        $resultados = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Processa os dados em PHP para formatar para o Chart.js
+        $labels = [];
+        $dados_formatados = [];
+        $meses_nomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+        // Inicializa os arrays para os últimos 6 meses
+        for ($i = $meses - 1; $i >= 0; $i--) {
+            $timestamp = strtotime(date('Y-m-01') . " -$i months");
+            $mes_ano_key = date('Y-m', $timestamp);
+            $labels[] = $meses_nomes[date('n', $timestamp) - 1] . '/' . date('y', $timestamp);
+            $dados_formatados[$mes_ano_key] = ['entrada' => 0, 'saida' => 0];
+        }
+
+        // Preenche com os dados do banco
+        foreach ($resultados as $row) {
+            $mes_ano_key = sprintf('%04d-%02d', $row['ano'], $row['mes']);
+            if (isset($dados_formatados[$mes_ano_key])) {
+                if ($row['tipo'] == 'entrada') {
+                    $dados_formatados[$mes_ano_key]['entrada'] = (float)$row['total'];
+                } else {
+                    $dados_formatados[$mes_ano_key]['saida'] = (float)$row['total'];
+                }
+            }
+        }
+
+        // Separa em arrays finais
+        $data_entrada = [];
+        $data_saida = [];
+        foreach ($dados_formatados as $dados_mes) {
+            $data_entrada[] = $dados_mes['entrada'];
+            $data_saida[] = $dados_mes['saida'];
+        }
+
+        return [
+            'labels' => $labels,
+            'datasets' => [
+                ['label' => 'Entradas', 'data' => $data_entrada, 'backgroundColor' => 'rgba(22, 163, 74, 0.7)'],
+                ['label' => 'Saídas', 'data' => $data_saida, 'backgroundColor' => 'rgba(220, 38, 38, 0.7)']
+            ]
+        ];
+    }   
+
+    // ... (cole isso no final da classe Transacao, antes do '}') ...
+
+    /**
+     * CARD 1.5: Busca o NÚMERO de parcelas pendentes (Dívida Futura).
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @return int O número de transações pendentes
+     */
+    public function buscarNumeroParcelasPendentes($contexto = 'trabalho') {
+        // Esta query CONTA as linhas de transação pendentes
+        $query = "SELECT COUNT(t.id) as total_parcelas
+                  FROM " . $this->tabela . " t
+                  INNER JOIN contas c ON t.conta_id = c.id
+                  WHERE t.data_efetivacao IS NULL
+                    AND t.tipo = 'saida'
+                    AND c.is_economia = " . ($contexto == 'trabalho' ? '0' : '1');
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $resultado = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        return $resultado['total_parcelas'] ?? 0;
+    }
+
+    // ... (cole isso no final da classe Transacao, antes do '}') ...
+
+    /**
+     * GRÁFICO 1 (Drill-down): Busca o total de dívidas pendentes agrupado por categoria.
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @return array [ ['nome_categoria' => 'Financiamento', 'total_pendente' => 20000, 'total_parcelas' => 48], ... ]
+     */
+    /**
+     * GRÁFICO 1 (Drill-down): Busca o total de dívidas pendentes agrupado por DESCRIÇÃO.
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @return array [ ['descricao' => 'Financiamento Carro', 'total_pendente' => 20000, 'total_parcelas' => 48], ... ]
+     */
+    public function buscarTotalPendentePorDescricao($contexto = 'trabalho') {
+        // Esta query não precisa mais da tabela 'categorias'
+        $query = "SELECT 
+                    t.descricao,
+                    SUM(t.valor) as total_pendente,
+                    COUNT(t.id) as total_parcelas
+                  FROM " . $this->tabela . " t
+                  INNER JOIN contas c ON t.conta_id = c.id
+                  WHERE t.data_efetivacao IS NULL
+                    AND t.tipo = 'saida'
+                    AND c.is_economia = " . ($contexto == 'trabalho' ? '0' : '1') . "
+                  GROUP BY t.descricao  -- A MUDANÇA ESTÁ AQUI
+                  HAVING total_pendente > 0
+                  ORDER BY total_pendente DESC";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 }

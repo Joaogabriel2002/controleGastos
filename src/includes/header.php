@@ -24,10 +24,11 @@
                                 
                                $links = [
                                     'index.php' => 'Dashboard',
-                                    'economias.php' => 'Economias', // <-- NOVO LINK
+                                    'economias.php' => 'Economias',
                                     'calendario.php' => 'Calendário', 
                                     'transacoes.php' => 'Lançamentos',
                                     'relatorio.php' => 'Relatório',
+                                    'graficos.php' => 'Gráficos', // <-- NOVO LINK
                                     'categorias.php' => 'Categorias',
                                     'contas.php' => 'Contas',
                                     'pessoas.php' => 'Pessoas'
