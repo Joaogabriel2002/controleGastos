@@ -145,27 +145,32 @@ class Transacao {
      * Se nulo, busca todos (Geral).
      * @return array [conta_id => ['entrada' => valor, 'saida' => valor]]
      */
-    public function buscarTotaisEfetivadosPorConta($data_fim = null) {
-        // Query base: só busca transações efetivadas
+    public function buscarTotaisEfetivadosPorConta($data_fim = null, $tipo_filtro = 'trabalho') {
         $query = "SELECT 
-                    conta_id, 
-                    tipo, 
-                    SUM(valor) as total_movimentado
+                    t.conta_id, t.tipo, SUM(t.valor) as total_movimentado
                   FROM 
-                    " . $this->tabela . "
+                    " . $this->tabela . " t
+                  INNER JOIN 
+                    contas c ON t.conta_id = c.id
                   WHERE 
-                    data_efetivacao IS NOT NULL"; // <-- IMPORTANTE: Só o que foi pago/recebido
+                    t.data_efetivacao IS NOT NULL";
         
-        // Adiciona o filtro de data se ele foi fornecido
+        // Filtro de data (para o "Saldo no Mês")
         if ($data_fim !== null) {
-            $query .= " AND data_efetivacao <= :data_fim";
+            $query .= " AND t.data_efetivacao <= :data_fim";
         }
         
-        $query .= " GROUP BY conta_id, tipo";
+        // *** O FILTRO DE ECONOMIA ***
+        if ($tipo_filtro == 'trabalho') {
+            $query .= " AND c.is_economia = 0 ";
+        } elseif ($tipo_filtro == 'economia') {
+            $query .= " AND c.is_economia = 1 ";
+        }
+        
+        $query .= " GROUP BY t.conta_id, t.tipo";
         
         $stmt = $this->conn->prepare($query);
         
-        // Binda o parâmetro de data, se existir
         if ($data_fim !== null) {
             $stmt->bindParam(':data_fim', $data_fim);
         }
@@ -173,19 +178,17 @@ class Transacao {
         $stmt->execute();
         $resultados = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
-        // Reorganiza o array
+        // ... (o resto da função de reorganizar o array continua igual) ...
         $totaisPorConta = [];
         foreach ($resultados as $resultado) {
             $contaId = $resultado['conta_id'];
             $tipo = $resultado['tipo'];
             $total = $resultado['total_movimentado'];
-            
             if (!isset($totaisPorConta[$contaId])) {
                 $totaisPorConta[$contaId] = ['entrada' => 0, 'saida' => 0];
             }
             $totaisPorConta[$contaId][$tipo] = $total;
         }
-        
         return $totaisPorConta;
     }
     /**
@@ -252,26 +255,27 @@ class Transacao {
      * @param int $ano
      * @return array ['total_recebido' => valor, 'total_pago' => valor]
      */
-    public function buscarResumoEfetivadoPorMes($mes, $ano) {
+    public function buscarResumoEfetivadoPorMes($mes, $ano, $tipo_filtro = 'trabalho') {
         $query = "SELECT 
-                    tipo, 
-                    SUM(valor) as total_efetivado
+                    t.tipo, SUM(t.valor) as total_efetivado
                   FROM 
-                    " . $this->tabela . "
+                    " . $this->tabela . " t
+                  INNER JOIN
+                    contas c ON t.conta_id = c.id
                   WHERE 
-                    data_efetivacao IS NOT NULL 
-                    AND MONTH(data_efetivacao) = :mes
-                    AND YEAR(data_efetivacao) = :ano
-                  GROUP BY 
-                    tipo";
+                    t.data_efetivacao IS NOT NULL 
+                    AND MONTH(t.data_efetivacao) = :mes
+                    AND YEAR(t.data_efetivacao) = :ano
+                    AND c.is_economia = " . ($tipo_filtro == 'trabalho' ? '0' : '1');
+        
+        $query .= " GROUP BY t.tipo";
         
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(':mes', $mes, PDO::PARAM_INT);
         $stmt->bindParam(':ano', $ano, PDO::PARAM_INT);
         $stmt->execute();
-        
+        // ... (o resto da função continua igual) ...
         $resultados = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
         $resumo = ['total_recebido' => 0, 'total_pago' => 0];
         foreach ($resultados as $resultado) {
             if ($resultado['tipo'] == 'entrada') {
@@ -282,33 +286,33 @@ class Transacao {
         }
         return $resumo;
     }
-
     /**
      * Busca o resumo de transações PENDENTES com vencimento em um mês específico.
      * @param int $mes
      * @param int $ano
      * @return array ['total_a_pagar' => valor, 'total_a_receber' => valor]
      */
-    public function buscarResumoPendentesPorMes($mes, $ano) {
+    public function buscarResumoPendentesPorMes($mes, $ano, $tipo_filtro = 'trabalho') {
         $query = "SELECT 
-                    tipo, 
-                    SUM(valor) as total_pendente
+                    t.tipo, SUM(t.valor) as total_pendente
                   FROM 
-                    " . $this->tabela . "
+                    " . $this->tabela . " t
+                  INNER JOIN
+                    contas c ON t.conta_id = c.id
                   WHERE 
-                    data_efetivacao IS NULL 
-                    AND MONTH(data_vencimento) = :mes
-                    AND YEAR(data_vencimento) = :ano
-                  GROUP BY 
-                    tipo";
+                    t.data_efetivacao IS NULL 
+                    AND MONTH(t.data_vencimento) = :mes
+                    AND YEAR(t.data_vencimento) = :ano
+                    AND c.is_economia = " . ($tipo_filtro == 'trabalho' ? '0' : '1');
+
+        $query .= " GROUP BY t.tipo";
         
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(':mes', $mes, PDO::PARAM_INT);
         $stmt->bindParam(':ano', $ano, PDO::PARAM_INT);
         $stmt->execute();
-        
+        // ... (o resto da função continua igual) ...
         $resultados = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
         $resumo = ['total_a_pagar' => 0, 'total_a_receber' => 0];
         foreach ($resultados as $resultado) {
             if ($resultado['tipo'] == 'saida') {
@@ -319,7 +323,6 @@ class Transacao {
         }
         return $resumo;
     }
-
     // ... (cole isso no final da classe Transacao, antes do '}') ...
 
     /**
@@ -413,5 +416,54 @@ class Transacao {
         
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Busca um resumo de entradas e saídas PENDENTES, agrupados por dia.
+     * @param int $mes
+     * @param int $ano
+     * @return array [dia => ['entrada' => valor, 'saida' => valor]]
+     */
+    public function buscarPendentesAgrupadosPorDia($mes, $ano) {
+        $query = "SELECT 
+                    DAY(data_vencimento) as dia,
+                    tipo, 
+                    SUM(valor) as total_dia
+                  FROM 
+                    " . $this->tabela . " t
+                  INNER JOIN
+                    contas c ON t.conta_id = c.id
+                  WHERE 
+                    t.data_efetivacao IS NULL 
+                    AND MONTH(t.data_vencimento) = :mes
+                    AND YEAR(t.data_vencimento) = :ano
+                    AND c.is_economia = 0"; // <-- Importante: Ignora economias
+        
+        $query .= " GROUP BY 
+                    DAY(data_vencimento), tipo
+                  ORDER BY 
+                    dia ASC";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':mes', $mes, PDO::PARAM_INT);
+        $stmt->bindParam(':ano', $ano, PDO::PARAM_INT);
+        $stmt->execute();
+        
+        $resultados = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Reorganiza o array para ficar fácil de usar
+        $dias = [];
+        foreach ($resultados as $resultado) {
+            $dia = (int)$resultado['dia'];
+            $tipo = $resultado['tipo'];
+            $total = $resultado['total_dia'];
+            
+            if (!isset($dias[$dia])) {
+                $dias[$dia] = ['entrada' => 0, 'saida' => 0];
+            }
+            $dias[$dia][$tipo] = $total;
+        }
+        
+        return $dias;
     }
 }

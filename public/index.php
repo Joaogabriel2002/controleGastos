@@ -11,26 +11,28 @@ $conn = $db->getConnection();
 $transacaoModel = new Transacao($conn);
 $contaModel = new Conta($conn);
 
-// --- LÓGICA DO FILTRO DE MÊS ---
+// --- Filtros de Mês/Ano ---
 $data_padrao = strtotime('+1 month');
 $mes_padrao = date('m', $data_padrao);
 $ano_padrao = date('Y', $data_padrao);
 $mes_selecionado = $_GET['mes'] ?? $mes_padrao;
 $ano_selecionado = $_GET['ano'] ?? $ano_padrao;
-$meses = [
-    '01' => 'Janeiro', '02' => 'Fevereiro', '03' => 'Março', '04' => 'Abril',
-    '05' => 'Maio', '06' => 'Junho', '07' => 'Julho', '08' => 'Agosto',
-    '09' => 'Setembro', '10' => 'Outubro', '11' => 'Novembro', '12' => 'Dezembro'
-];
+$meses = ['01' => 'Janeiro', '02' => 'Fevereiro', '03' => 'Março', '04' => 'Abril', '05' => 'Maio', '06' => 'Junho', '07' => 'Julho', '08' => 'Agosto', '09' => 'Setembro', '10' => 'Outubro', '11' => 'Novembro', '12' => 'Dezembro'];
 $anos = range(date('Y') + 1, date('Y') - 5);
 $visao_saldo = $_GET['visao_saldo'] ?? 'geral';
 
+// --- DEFINIÇÃO DE CONTEXTO ---
+// O Dashboard (index.php) mostra APENAS contas de 'trabalho'
+$contexto = 'trabalho'; 
+
 // 2.1. Buscar dados-base
-$listaContas = $contaModel->buscarTodas();
+// Busca APENAS contas de trabalho
+$listaContas = $contaModel->buscarTodas($contexto); 
 
 // 2.2. Buscar dados FILTRADOS PELO MÊS (Para os Cards)
-$resumoEfetivado = $transacaoModel->buscarResumoEfetivadoPorMes($mes_selecionado, $ano_selecionado);
-$resumoPendentes = $transacaoModel->buscarResumoPendentesPorMes($mes_selecionado, $ano_selecionado);
+// Busca resumos APENAS de contas de trabalho
+$resumoEfetivado = $transacaoModel->buscarResumoEfetivadoPorMes($mes_selecionado, $ano_selecionado, $contexto);
+$resumoPendentes = $transacaoModel->buscarResumoPendentesPorMes($mes_selecionado, $ano_selecionado, $contexto);
 
 // 2.3. Calcular totais para os cards (Baseado no MÊS)
 $totalRecebidoMes = $resumoEfetivado['total_recebido'];
@@ -40,13 +42,10 @@ $totalAReceberMes = $resumoPendentes['total_a_receber'];
 $totalAPagarMes = $resumoPendentes['total_a_pagar'];
 $balancoPendenteMes = $totalAReceberMes - $totalAPagarMes; 
 
-
 // 2.4. CALCULAR SALDOS (PARA A PROJEÇÃO E PARA A TABELA)
-
-// *** A VARIÁVEL QUE VOCÊ QUER VER: "Saldo Anterior" ***
-// (Calcula o Saldo Consolidado Geral Efetivado até hoje)
-$totaisPorConta_Geral = $transacaoModel->buscarTotaisEfetivadosPorConta(null);
-$saldoConsolidadoAtual = 0; // Este é o seu "Saldo Anterior"
+// Busca totais de contas de trabalho
+$totaisPorConta_Geral = $transacaoModel->buscarTotaisEfetivadosPorConta(null, $contexto);
+$saldoConsolidadoAtual = 0; 
 foreach ($listaContas as $conta) {
     $saldo = $conta['saldo_inicial']; 
     if (isset($totaisPorConta_Geral[$conta['id']])) {
@@ -55,21 +54,18 @@ foreach ($listaContas as $conta) {
     }
     $saldoConsolidadoAtual += $saldo;
 }
-
-// *** O RESULTADO DA PROJEÇÃO ***
 $saldoProjetadoFimDoMes = $saldoConsolidadoAtual + $balancoPendenteMes;
-
 
 // 2.5. Lógica da Tabela de Saldos (depende da $visao_saldo)
 $data_filtro_tabela = null;
-$titulo_tabela_saldo = "Saldos Totais das Contas (Consolidado Geral)";
+$titulo_tabela_saldo = "Saldos Totais (Contas de Trabalho)";
 $totaisPorConta_Tabela = $totaisPorConta_Geral; 
 
 if ($visao_saldo == 'mes') {
     $ultimo_dia = date('Y-m-t', strtotime("{$ano_selecionado}-{$mes_selecionado}-01"));
     $data_filtro_tabela = $ultimo_dia;
-    $titulo_tabela_saldo = "Saldos das Contas (Posição em " . date('d/m/Y', strtotime($ultimo_dia)) . ")";
-    $totaisPorConta_Tabela = $transacaoModel->buscarTotaisEfetivadosPorConta($data_filtro_tabela);
+    $titulo_tabela_saldo = "Saldos (Trabalho) (Posição em " . date('d/m/Y', strtotime($ultimo_dia)) . ")";
+    $totaisPorConta_Tabela = $transacaoModel->buscarTotaisEfetivadosPorConta($data_filtro_tabela, $contexto);
 }
 
 $contasComSaldo = [];
@@ -86,14 +82,14 @@ foreach ($listaContas as $conta) {
     $saldoGeralTabela += $saldo;
 }
 
-// 3. Incluir o topo da página
+// 3. Incluir o topo da página (o HTML restante é idêntico)
 $tituloPagina = "Dashboard";
 require_once '../src/includes/header.php'; 
 ?>
 
 <script>
     document.querySelector('header.bg-white div').innerHTML = 
-        `<h1 class="text-3xl font-bold tracking-tight text-gray-900"><?php echo $tituloPagina; ?></h1>`;
+        `<h1 class="text-3xl font-bold tracking-tight text-gray-900"><?php echo $tituloPagina; ?> (Dinheiro de Trabalho)</h1>`;
 </script>
 
 <div class="bg-white p-4 shadow rounded-lg mb-6">
@@ -123,56 +119,17 @@ require_once '../src/includes/header.php';
 
 <h2 class="text-lg font-semibold text-gray-900 mb-2">Fluxo de Caixa Efetivado (<?php echo $meses[$mes_selecionado].'/'.$ano_selecionado; ?>)</h2>
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-green-500">
-        <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Recebido</h3>
-        <p class="mt-1 text-3xl font-semibold text-green-600">
-            R$ <?php echo number_format($totalRecebidoMes, 2, ',', '.'); ?>
-        </p>
-    </div>
-    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-red-500">
-        <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Pago</h3>
-        <p class="mt-1 text-3xl font-semibold text-red-600">
-            R$ <?php echo number_format($totalPagoMes, 2, ',', '.'); ?>
-        </p>
-    </div>
-    <div class="bg-white p-6 shadow rounded-lg border-l-4 <?php echo $balancoMes >= 0 ? 'border-blue-500' : 'border-gray-500'; ?>">
-        <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Balanço do Mês</h3>
-        <p class="mt-1 text-3xl font-semibold <?php echo $balancoMes >= 0 ? 'text-blue-600' : 'text-gray-600'; ?>">
-            R$ <?php echo number_format($balancoMes, 2, ',', '.'); ?>
-        </p>
-    </div>
+    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-green-500"><h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Recebido</h3><p class="mt-1 text-3xl font-semibold text-green-600">R$ <?php echo number_format($totalRecebidoMes, 2, ',', '.'); ?></p></div>
+    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-red-500"><h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Pago</h3><p class="mt-1 text-3xl font-semibold text-red-600">R$ <?php echo number_format($totalPagoMes, 2, ',', '.'); ?></p></div>
+    <div class="bg-white p-6 shadow rounded-lg border-l-4 <?php echo $balancoMes >= 0 ? 'border-blue-500' : 'border-gray-500'; ?>"><h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Balanço do Mês</h3><p class="mt-1 text-3xl font-semibold <?php echo $balancoMes >= 0 ? 'text-blue-600' : 'text-gray-600'; ?>">R$ <?php echo number_format($balancoMes, 2, ',', '.'); ?></p></div>
 </div>
 
 <h2 class="text-lg font-semibold text-gray-900 mb-2">Projeção (<?php echo $meses[$mes_selecionado].'/'.$ano_selecionado; ?>)</h2>
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-    
-    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-gray-500">
-        <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Saldo Consolidado Atual</h3>
-        <p class="mt-1 text-3xl font-semibold <?php echo $saldoConsolidadoAtual >= 0 ? 'text-gray-900' : 'text-red-600'; ?>">
-            R$ <?php echo number_format($saldoConsolidadoAtual, 2, ',', '.'); ?>
-        </p>
-    </div>
-    
-    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-green-400">
-        <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">(+) A Receber (no Mês)</h3>
-        <p class="mt-1 text-3xl font-semibold text-green-500">
-            R$ <?php echo number_format($totalAReceberMes, 2, ',', '.'); ?>
-        </p>
-    </div>
-
-    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-red-400">
-        <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">(-) A Pagar (no Mês)</h3>
-        <p class="mt-1 text-3xl font-semibold text-red-500">
-            R$ <?php echo number_format($totalAPagarMes, 2, ',', '.'); ?>
-        </p>
-    </div>
-    
-    <div class="bg-white p-6 shadow rounded-lg border-l-4 <?php echo $saldoProjetadoFimDoMes >= 0 ? 'border-indigo-500' : 'border-red-600'; ?>">
-        <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">(=) Saldo Projetado</h3>
-        <p class="mt-1 text-3xl font-semibold <?php echo $saldoProjetadoFimDoMes >= 0 ? 'text-indigo-600' : 'text-red-700'; ?>">
-            R$ <?php echo number_format($saldoProjetadoFimDoMes, 2, ',', '.'); ?>
-        </p>
-    </div>
+    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-gray-500"><h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Saldo Consolidado Atual</h3><p class="mt-1 text-3xl font-semibold <?php echo $saldoConsolidadoAtual >= 0 ? 'text-gray-900' : 'text-red-600'; ?>">R$ <?php echo number_format($saldoConsolidadoAtual, 2, ',', '.'); ?></p></div>
+    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-green-400"><h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">(+) A Receber (no Mês)</h3><p class="mt-1 text-3xl font-semibold text-green-500">R$ <?php echo number_format($totalAReceberMes, 2, ',', '.'); ?></p></div>
+    <div class="bg-white p-6 shadow rounded-lg border-l-4 border-red-400"><h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">(-) A Pagar (no Mês)</h3><p class="mt-1 text-3xl font-semibold text-red-500">R$ <?php echo number_format($totalAPagarMes, 2, ',', '.'); ?></p></div>
+    <div class="bg-white p-6 shadow rounded-lg border-l-4 <?php echo $saldoProjetadoFimDoMes >= 0 ? 'border-indigo-500' : 'border-red-600'; ?>"><h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">(=) Saldo Projetado</h3><p class="mt-1 text-3xl font-semibold <?php echo $saldoProjetadoFimDoMes >= 0 ? 'text-indigo-600' : 'text-red-700'; ?>">R$ <?php echo number_format($saldoProjetadoFimDoMes, 2, ',', '.'); ?></p></div>
 </div>
 
 
@@ -213,7 +170,7 @@ require_once '../src/includes/header.php';
         <tbody class="bg-white divide-y divide-gray-200">
             <?php if (empty($contasComSaldo)): ?>
                 <tr>
-                    <td colspan="3" class="px-6 py-4 text-center text-gray-500">Nenhuma conta cadastrada.</td>
+                    <td colspan="3" class="px-6 py-4 text-center text-gray-500">Nenhuma conta de trabalho cadastrada.</td>
                 </tr>
             <?php else: ?>
                 <?php foreach ($contasComSaldo as $conta): ?>
