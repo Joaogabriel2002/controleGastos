@@ -494,14 +494,17 @@ class Transacao {
      * @param int $limite Quantas categorias (Top 5, Top 10)
      * @return array [ ['nome' => 'Alimentação', 'total_gasto' => 500], ... ]
      */
-    public function buscarGastoPorCategoria($contexto = 'trabalho', $limite = 5) {
+    public function buscarGastoPorCategoria($contexto = 'trabalho', $limite = 5, $tipo_dado = 'realizado') {
+        // Define o filtro de status (Realizado ou Previsto)
+        $status_check = ($tipo_dado == 'realizado') ? 't.data_efetivacao IS NOT NULL' : 't.data_efetivacao IS NULL';
+
         $query = "SELECT 
                     cat.nome, 
                     SUM(t.valor) as total_gasto
                   FROM " . $this->tabela . " t
                   INNER JOIN categorias cat ON t.categoria_id = cat.id
                   INNER JOIN contas c ON t.conta_id = c.id
-                  WHERE t.data_efetivacao IS NOT NULL
+                  WHERE $status_check
                     AND t.tipo = 'saida'
                     AND c.is_economia = " . ($contexto == 'trabalho' ? '0' : '1') . "
                   GROUP BY cat.nome
@@ -519,22 +522,36 @@ class Transacao {
      * @param int $meses Quantidade de meses para trás
      * @return array Dados formatados para Chart.js
      */
-    public function buscarFluxoCaixaUltimosMeses($contexto = 'trabalho', $meses = 6) {
+    public function buscarFluxoCaixaUltimosMeses($contexto = 'trabalho', $meses = 6, $tipo_dado = 'realizado') {
+        
+        if ($tipo_dado == 'realizado') {
+            $date_column = 't.data_efetivacao';
+            $status_check = 't.data_efetivacao IS NOT NULL';
+            // 6 meses para trás (incluindo o mês atual)
+            $date_range_check = "t.data_efetivacao >= DATE_FORMAT(CURDATE() - INTERVAL 5 MONTH, '%Y-%m-01')";
+            $order_by = "ano ASC, mes ASC";
+        } else { // 'previsto'
+            $date_column = 't.data_vencimento';
+            $status_check = 't.data_efetivacao IS NULL';
+            // 6 meses para frente (incluindo o mês atual)
+            $date_range_check = "t.data_vencimento >= DATE_FORMAT(CURDATE(), '%Y-%m-01') AND t.data_vencimento < DATE_FORMAT(CURDATE() + INTERVAL 6 MONTH, '%Y-%m-01')";
+            $order_by = "ano ASC, mes ASC";
+        }
+
         $query = "SELECT 
-                    YEAR(t.data_efetivacao) as ano,
-                    MONTH(t.data_efetivacao) as mes,
+                    YEAR($date_column) as ano,
+                    MONTH($date_column) as mes,
                     t.tipo,
                     SUM(t.valor) as total
                   FROM " . $this->tabela . " t
                   INNER JOIN contas c ON t.conta_id = c.id
-                  WHERE t.data_efetivacao IS NOT NULL
-                    AND t.data_efetivacao >= DATE_SUB(CURDATE(), INTERVAL :meses MONTH)
+                  WHERE $status_check
+                    AND $date_range_check
                     AND c.is_economia = " . ($contexto == 'trabalho' ? '0' : '1') . "
                   GROUP BY ano, mes, t.tipo
-                  ORDER BY ano ASC, mes ASC";
+                  ORDER BY $order_by";
         
         $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(':meses', $meses, PDO::PARAM_INT);
         $stmt->execute();
         $resultados = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -543,14 +560,25 @@ class Transacao {
         $dados_formatados = [];
         $meses_nomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-        // Inicializa os arrays para os últimos 6 meses
-        for ($i = $meses - 1; $i >= 0; $i--) {
-            $timestamp = strtotime(date('Y-m-01') . " -$i months");
-            $mes_ano_key = date('Y-m', $timestamp);
-            $labels[] = $meses_nomes[date('n', $timestamp) - 1] . '/' . date('y', $timestamp);
-            $dados_formatados[$mes_ano_key] = ['entrada' => 0, 'saida' => 0];
+        // Inicializa os arrays para os 6 meses
+        if ($tipo_dado == 'realizado') {
+            // 6 meses para trás
+            for ($i = $meses - 1; $i >= 0; $i--) {
+                $timestamp = strtotime(date('Y-m-01') . " -$i months");
+                $mes_ano_key = date('Y-m', $timestamp);
+                $labels[] = $meses_nomes[date('n', $timestamp) - 1] . '/' . date('y', $timestamp);
+                $dados_formatados[$mes_ano_key] = ['entrada' => 0, 'saida' => 0];
+            }
+        } else {
+            // 6 meses para frente
+            for ($i = 0; $i < $meses; $i++) {
+                $timestamp = strtotime(date('Y-m-01') . " +$i months");
+                $mes_ano_key = date('Y-m', $timestamp);
+                $labels[] = $meses_nomes[date('n', $timestamp) - 1] . '/' . date('y', $timestamp);
+                $dados_formatados[$mes_ano_key] = ['entrada' => 0, 'saida' => 0];
+            }
         }
-
+        
         // Preenche com os dados do banco
         foreach ($resultados as $row) {
             $mes_ano_key = sprintf('%04d-%02d', $row['ano'], $row['mes']);
@@ -562,7 +590,7 @@ class Transacao {
                 }
             }
         }
-
+        
         // Separa em arrays finais
         $data_entrada = [];
         $data_saida = [];
@@ -578,8 +606,7 @@ class Transacao {
                 ['label' => 'Saídas', 'data' => $data_saida, 'backgroundColor' => 'rgba(220, 38, 38, 0.7)']
             ]
         ];
-    }   
-
+    }
     // ... (cole isso no final da classe Transacao, antes do '}') ...
 
     /**
@@ -629,6 +656,73 @@ class Transacao {
                   GROUP BY t.descricao  -- A MUDANÇA ESTÁ AQUI
                   HAVING total_pendente > 0
                   ORDER BY total_pendente DESC";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    // ... (cole isso no final da classe Transacao, antes do '}') ...
+
+    /**
+     * GRÁFICO 1 (Drill-down Categoria): Busca o total de dívidas pendentes agrupado por CATEGORIA.
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @return array [ ['nome_categoria' => 'Financiamento', 'total_pendente' => 20000, 'total_parcelas' => 48], ... ]
+     */
+    public function buscarTotalPendentePorCategoria($contexto = 'trabalho') {
+        $query = "SELECT 
+                    cat.nome as nome_categoria,
+                    SUM(t.valor) as total_pendente,
+                    COUNT(t.id) as total_parcelas
+                  FROM " . $this->tabela . " t
+                  INNER JOIN categorias cat ON t.categoria_id = cat.id
+                  INNER JOIN contas c ON t.conta_id = c.id
+                  WHERE t.data_efetivacao IS NULL
+                    AND t.tipo = 'saida'
+                    AND c.is_economia = " . ($contexto == 'trabalho' ? '0' : '1') . "
+                  GROUP BY cat.id, cat.nome
+                  HAVING total_pendente > 0
+                  ORDER BY total_pendente DESC";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // ... (cole isso no final da classe Transacao, antes do '}') ...
+
+    /**
+     * GRÁFICO 4: Busca os gastos efetivados, agrupados por CONTA.
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @param int $limite Quantas contas (Top 5, Top 10)
+     * @return array [ ['nome_conta' => 'Cartão Nubank', 'total_gasto' => 1200], ... ]
+     */
+    // ... (cole isso no final da classe Transacao, antes do '}') ...
+
+    /**
+     * GRÁFICO 1 (Drill-down Mês): Busca o total de dívidas pendentes agrupado por MÊS/ANO.
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @return array [ ['ano' => 2025, 'mes' => 11, 'total_pendente' => 500], ... ]
+     */
+   /**
+     * GRÁFICO 1 (Drill-down Mês/Conta): Busca o total de dívidas pendentes agrupado por MÊS/ANO e por CONTA.
+     * @param string $contexto 'trabalho' ou 'economia'
+     * @return array [ ['ano' => 2025, 'mes' => 11, 'nome_conta' => 'Cartão Nubank', 'total_pendente' => 500], ... ]
+     */
+    public function buscarTotalPendentePorMesEConta($contexto = 'trabalho') {
+        $query = "SELECT 
+                    YEAR(t.data_vencimento) as ano,
+                    MONTH(t.data_vencimento) as mes,
+                    co.nome as nome_conta,
+                    SUM(t.valor) as total_pendente
+                  FROM " . $this->tabela . " t
+                  INNER JOIN contas c ON t.conta_id = c.id
+                  INNER JOIN contas co ON t.conta_id = co.id -- (mesma tabela 'contas' para pegar o nome)
+                  WHERE t.data_efetivacao IS NULL
+                    AND t.tipo = 'saida'
+                    AND c.is_economia = " . ($contexto == 'trabalho' ? '0' : '1') . "
+                  GROUP BY ano, mes, t.conta_id, co.nome
+                  HAVING total_pendente > 0
+                  ORDER BY ano ASC, mes ASC, total_pendente DESC"; // Ordena por data, e depois por valor
         
         $stmt = $this->conn->prepare($query);
         $stmt->execute();

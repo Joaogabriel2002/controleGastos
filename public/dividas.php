@@ -9,9 +9,23 @@ $db = new Database();
 $conn = $db->getConnection();
 $transacaoModel = new Transacao($conn);
 
+// *** MUDANÇA: Lógica do Seletor ***
+// Pega o tipo de agrupamento do GET, o padrão é 'descricao' (o que você pediu)
+$group_by = $_GET['group_by'] ?? 'descricao';
+$titulo_relatorio = "Dívidas Pendentes por Descrição";
+$coluna_principal = "Descrição da Dívida";
+
 // 3. Buscar dados
-// *** MUDANÇA: Chama o novo método ***
-$listaDividas = $transacaoModel->buscarTotalPendentePorDescricao('trabalho');
+if ($group_by == 'categoria') {
+    // Se pediu por categoria, chama o método de categoria
+    $listaDividas = $transacaoModel->buscarTotalPendentePorCategoria('trabalho');
+    $titulo_relatorio = "Dívidas Pendentes por Categoria";
+    $coluna_principal = "Categoria";
+} else {
+    // Senão, chama o método padrão (por descrição)
+    $listaDividas = $transacaoModel->buscarTotalPendentePorDescricao('trabalho');
+}
+// *** FIM DA MUDANÇA ***
 
 // Calcula o total geral para o cabeçalho
 $totalGeral = array_sum(array_column($listaDividas, 'total_pendente'));
@@ -27,9 +41,29 @@ require_once '../src/includes/header.php';
 </script>
 
 <div class="bg-white shadow rounded-lg overflow-hidden">
-    <div class="flex justify-between items-center p-6">
-        <h2 class="text-xl font-semibold">Dívidas Pendentes por Descrição</h2>
-        <div class="text-right">
+    <div class="flex flex-wrap justify-between items-center p-6">
+        <div>
+            <h2 class="text-xl font-semibold"><?php echo $titulo_relatorio; ?></h2>
+            
+            <div class="mt-2 text-sm">
+                <span class="font-medium">Agrupar por:</span>
+                <?php
+                $link_descricao = "dividas.php?group_by=descricao";
+                $link_categoria = "dividas.php?group_by=categoria";
+                
+                $classe_desc = ($group_by == 'descricao') ? 'font-bold text-indigo-700' : 'text-indigo-600 hover:text-indigo-900';
+                $classe_cat = ($group_by == 'categoria') ? 'font-bold text-indigo-700' : 'text-indigo-600 hover:text-indigo-900';
+                ?>
+                <a href="<?php echo $link_descricao; ?>" class="<?php echo $classe_desc; ?>">
+                    Descrição
+                </a>
+                <span class="mx-2 text-gray-400">|</span>
+                <a href="<?php echo $link_categoria; ?>" class="<?php echo $classe_cat; ?>">
+                    Categoria
+                </a>
+            </div>
+        </div>
+        <div class="text-right mt-4 md:mt-0">
              <h3 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Geral a Quitar</h3>
              <p class="text-2xl font-semibold text-red-600">
                 R$ <?php echo number_format($totalGeral, 2, ',', '.'); ?>
@@ -40,7 +74,7 @@ require_once '../src/includes/header.php';
     <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
             <tr>
-                <th class="th-table">Descrição da Dívida</th>
+                <th class="th-table"><?php echo $coluna_principal; ?></th>
                 <th class="th-table text-right">Nº de Parcelas Pendentes</th>
                 <th class="th-table text-right">Valor Total Pendente</th>
             </tr>
@@ -54,7 +88,11 @@ require_once '../src/includes/header.php';
                 <?php foreach ($listaDividas as $divida): ?>
                     <tr>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            <?php echo htmlspecialchars($divida['descricao']); ?>
+                            <?php 
+                            // Exibe 'descricao' ou 'nome_categoria' dependendo do filtro
+                            $nome_item = ($group_by == 'categoria') ? $divida['nome_categoria'] : $divida['descricao'];
+                            echo htmlspecialchars($nome_item); 
+                            ?>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
                             <?php echo $divida['total_parcelas']; ?> parcelas
