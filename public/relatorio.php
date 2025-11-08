@@ -19,31 +19,36 @@ $contaModel = new Conta($conn);
 // Captura todos os filtros do GET
 $filtros = $_GET; 
 
-// 2.1 VERIFICA SE É PARA "DAR BAIXA"
-// (Lógica de baixa movida para o topo, antes de buscar os dados)
+// 3.1 VERIFICA SE É PARA "DAR BAIXA"
 if (isset($filtros['efetivar_id'])) {
     if ($transacaoModel->marcarComoEfetivado($filtros['efetivar_id'])) {
-        // Remove o parâmetro para evitar loop
         unset($filtros['efetivar_id']);
-        // Recarrega a página com os mesmos filtros
         header("Location: relatorio.php?" . http_build_query($filtros));
         exit;
     }
 }
 
+// *** NOVO: 3.2 VERIFICA SE É PARA "EXCLUIR" ***
+if (isset($filtros['excluir_id'])) {
+    if ($transacaoModel->excluir($filtros['excluir_id'])) {
+        // Sucesso
+        unset($filtros['excluir_id']);
+    } else {
+        // Falha (não precisa de mensagem, só remove o param)
+        unset($filtros['excluir_id']);
+    }
+    // Recarrega a página com os filtros atuais
+    header("Location: relatorio.php?" . http_build_query($filtros));
+    exit;
+}
+// *** FIM DA MUDANÇA ***
 
-// *** MUDANÇA 2: Define o padrão como Mês Seguinte ***
-// "sempre puxe um mes acima do mes q estamos"
+// 3.3 Define o Mês/Ano padrão
 $data_padrao = strtotime('+1 month');
 $mes_padrao = date('m', $data_padrao);
 $ano_padrao = date('Y', $data_padrao);
-
-// Define o Mês/Ano padrão se não estiverem no filtro
 $filtros['mes'] = $filtros['mes'] ?? $mes_padrao;
 $filtros['ano'] = $filtros['ano'] ?? $ano_padrao;
-// *** FIM DA MUDANÇA 2 ***
-
-// Guarda os valores selecionados para os formulários
 $mes_selecionado = $filtros['mes'];
 $ano_selecionado = $filtros['ano'];
 
@@ -55,12 +60,9 @@ $meses = [
 $anos = range(date('Y') + 1, date('Y') - 5);
 
 // 4. Buscar dados
-// Busca as transações filtradas (passando o array $filtros)
 $listaTransacoes = $transacaoModel->buscarTransacoesFiltradas($filtros);
-
-// Busca dados para os dropdowns de filtro
 $listaCategorias = $categoriaModel->buscarTodas();
-$listaContas = $contaModel->buscarTodas();
+$listaContas = $contaModel->buscarTodas('todas'); // Busca todas para o filtro
 
 // 5. Incluir o topo da página
 $tituloPagina = "Relatório de Lançamentos";
@@ -113,8 +115,7 @@ require_once '../src/includes/header.php';
                             </select>
                         </div>
                     </th>
-                    <th class="px-3 py-2">
-                        </th>
+                    <th class="px-3 py-2"></th>
                     <th class="px-3 py-2">
                         <select name="filtro_tipo" class="filter-input">
                             <option value="">Todos</option>
@@ -163,7 +164,6 @@ require_once '../src/includes/header.php';
             </thead>
             
             <?php 
-            // *** MUDANÇA 1: Inicializa os totais ***
             $total_entradas = 0;
             $total_saidas = 0;
             ?>
@@ -176,13 +176,11 @@ require_once '../src/includes/header.php';
                 <?php else: ?>
                     <?php foreach ($listaTransacoes as $transacao): ?>
                         <?php
-                        // --- Cálculo do Total ---
                         if ($transacao['tipo'] == 'entrada') {
                             $total_entradas += $transacao['valor'];
                         } else {
                             $total_saidas += $transacao['valor'];
                         }
-                        // --- Fim do Cálculo ---
                         ?>
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -216,13 +214,20 @@ require_once '../src/includes/header.php';
                                     </span>
                                 <?php endif; ?>
                             </td>
+                            
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <?php if (is_null($transacao['data_efetivacao'])): ?>
+                                <?php if (is_null($transacao['data_efetivacao'])): // IF é Previsto ?>
                                     <a href="relatorio.php?efetivar_id=<?php echo $transacao['id']; ?>&<?php echo http_build_query($filtros); ?>" 
                                        class="text-green-600 hover:text-green-900">
                                        Baixar
                                     </a>
-                                <?php endif; ?>
+                                    
+                                    <a href="relatorio.php?excluir_id=<?php echo $transacao['id']; ?>&<?php echo http_build_query($filtros); ?>" 
+                                       class="text-red-600 hover:text-red-900 ml-3"
+                                       onclick="return confirm('Tem certeza que deseja excluir este lançamento previsto?');">
+                                       Excluir
+                                    </a>
+                                <?php endif; // Fim do IF é Previsto ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -254,7 +259,7 @@ require_once '../src/includes/header.php';
             </div>
         </div>
     </div>
-    </div>
+</div>
 
 <style>
     .th-table {
