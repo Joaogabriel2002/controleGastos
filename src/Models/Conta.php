@@ -1,54 +1,47 @@
 <?php
 // Arquivo: src/Models/Conta.php
+// ATUALIZADO para 'tipo_pote'
 
 class Conta {
     
     private $conn;
     private $tabela = 'contas';
 
-    // Construtor
     public function __construct($db) {
         $this->conn = $db;
     }
 
     /**
-     * Busca todas as contas no banco de dados.
-     * @return array Lista de contas
+     * Busca contas, opcionalmente filtrando por tipo de pote.
+     * @param string $tipo_pote 'todas', 'trabalho', 'economia', 'emprestimos'
      */
-    /**
-     * Busca todas as contas no banco de dados, opcionalmente filtrando por tipo.
-     * @param string $tipo_filtro 'todas', 'trabalho' (padrão), 'economia'
-     * @return array Lista de contas
-     */
-    public function buscarTodas($tipo_filtro = 'todas') {
-        $query = "SELECT id, nome, saldo_inicial, tipo_conta, is_economia
+    public function buscarTodas($tipo_pote = 'todas') {
+        $query = "SELECT id, nome, saldo_inicial, tipo_conta, tipo_pote
                   FROM " . $this->tabela;
         
-        if ($tipo_filtro == 'trabalho') {
-            $query .= " WHERE is_economia = 0 ";
-        } elseif ($tipo_filtro == 'economia') {
-            $query .= " WHERE is_economia = 1 ";
+        // Filtra pelo tipo de pote, se não for 'todas'
+        if ($tipo_pote != 'todas') {
+            $query .= " WHERE tipo_pote = :tipo_pote ";
         }
-        // Se for 'todas', não adiciona WHERE
         
         $query .= " ORDER BY nome ASC";
         
         $stmt = $this->conn->prepare($query);
-        $stmt->execute();
         
+        if ($tipo_pote != 'todas') {
+            $stmt->bindParam(':tipo_pote', $tipo_pote);
+        }
+        
+        $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     /**
-     * Salva uma nova conta no banco de dados.
-     * @param string $nome
-     * @param float $saldo_inicial
-     * @param string|null $tipo_conta
-     * @return bool
+     * Salva uma nova conta.
      */
-    public function salvar($nome, $saldo_inicial, $tipo_conta, $is_economia = 0) {
-        $query = "INSERT INTO " . $this->tabela . " (nome, saldo_inicial, tipo_conta, is_economia) 
-                  VALUES (:nome, :saldo_inicial, :tipo_conta, :is_economia)";
+    public function salvar($nome, $saldo_inicial, $tipo_conta, $tipo_pote = 'trabalho') {
+        $query = "INSERT INTO " . $this->tabela . " (nome, saldo_inicial, tipo_conta, tipo_pote) 
+                  VALUES (:nome, :saldo_inicial, :tipo_conta, :tipo_pote)";
         
         $stmt = $this->conn->prepare($query);
         
@@ -58,17 +51,59 @@ class Conta {
         $stmt->bindParam(':nome', $nome);
         $stmt->bindParam(':saldo_inicial', $saldo_inicial);
         $stmt->bindParam(':tipo_conta', $tipo_conta);
-        $stmt->bindParam(':is_economia', $is_economia, PDO::PARAM_INT);
+        $stmt->bindParam(':tipo_pote', $tipo_pote);
         
         if ($stmt->execute()) {
             return true;
         }
         return false;
     }
+
+    /**
+     * Busca uma única conta pelo seu ID.
+     */
+    public function buscarPorId($id) {
+        $query = "SELECT id, nome, saldo_inicial, tipo_conta, tipo_pote 
+                  FROM " . $this->tabela . " 
+                  WHERE id = :id 
+                  LIMIT 1";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':id', $id);
+        $stmt->execute();
+        
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Atualiza uma conta existente.
+     */
+    public function atualizar($id, $nome, $saldo_inicial, $tipo_conta, $tipo_pote = 'trabalho') {
+        $query = "UPDATE " . $this->tabela . " 
+                  SET nome = :nome, saldo_inicial = :saldo_inicial, 
+                      tipo_conta = :tipo_conta, tipo_pote = :tipo_pote 
+                  WHERE id = :id";
+        
+        $stmt = $this->conn->prepare($query);
+        
+        $id = htmlspecialchars(strip_tags($id));
+        $nome = htmlspecialchars(strip_tags($nome));
+        $tipo_conta = htmlspecialchars(strip_tags($tipo_conta));
+        
+        $stmt->bindParam(':id', $id);
+        $stmt->bindParam(':nome', $nome);
+        $stmt->bindParam(':saldo_inicial', $saldo_inicial);
+        $stmt->bindParam(':tipo_conta', $tipo_conta);
+        $stmt->bindParam(':tipo_pote', $tipo_pote);
+        
+        if ($stmt->execute()) {
+            return true;
+        }
+        return false;
+    }
+
     /**
      * Exclui uma conta do banco de dados.
-     * @param int $id
-     * @return bool
      */
     public function excluir($id) {
         $query = "DELETE FROM " . $this->tabela . " WHERE id = :id";
@@ -81,60 +116,6 @@ class Conta {
         if ($stmt->execute()) {
             return true;
         }
-        
-        return false;
-    }
-
-    // ... (cole isso no final da classe Conta, antes do '}') ...
-
-    /**
-     * Busca uma única conta pelo seu ID.
-     * @param int $id O ID da conta
-     * @return array|false Dados da conta ou false se não encontrar
-     */
-    public function buscarPorId($id) {
-        $query = "SELECT id, nome, saldo_inicial, tipo_conta, is_economia 
-                  FROM " . $this->tabela . " 
-                  WHERE id = :id 
-                  LIMIT 1";
-        
-        $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(':id', $id);
-        $stmt->execute();
-        
-        return $stmt->fetch(PDO::FETCH_ASSOC);
-    }   
-
-    /**
-     * Atualiza uma conta existente no banco de dados.
-     * @param int $id
-     * @param string $nome
-     * @param float $saldo_inicial
-     * @param string|null $tipo_conta
-     * @return bool
-     */
-    public function atualizar($id, $nome, $saldo_inicial, $tipo_conta) {
-        $query = "UPDATE " . $this->tabela . " 
-                  SET nome = :nome, saldo_inicial = :saldo_inicial, tipo_conta = :tipo_conta 
-                  WHERE id = :id";
-        
-        $stmt = $this->conn->prepare($query);
-        
-        // Limpa os dados
-        $id = htmlspecialchars(strip_tags($id));
-        $nome = htmlspecialchars(strip_tags($nome));
-        $tipo_conta = htmlspecialchars(strip_tags($tipo_conta));
-        
-        // Binda os valores
-        $stmt->bindParam(':id', $id);
-        $stmt->bindParam(':nome', $nome);
-        $stmt->bindParam(':saldo_inicial', $saldo_inicial);
-        $stmt->bindParam(':tipo_conta', $tipo_conta);
-        
-        if ($stmt->execute()) {
-            return true;
-        }
-        
         return false;
     }
 }

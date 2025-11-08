@@ -23,11 +23,9 @@ $id = $_GET['id'];
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_conta'])) {
     if (!empty($_POST['nome']) && isset($_POST['saldo_inicial']) && !empty($_POST['id'])) {
         
-        // *** MUDANÇA: Captura o valor do checkbox 'is_economia' ***
-        $is_economia = isset($_POST['is_economia']) ? 1 : 0;
+        $tipo_pote = $_POST['tipo_pote'] ?? 'trabalho';
         
-        // Passa o novo valor para o método atualizar (que precisaremos mudar)
-        if ($contaModel->atualizar($_POST['id'], $_POST['nome'], $_POST['saldo_inicial'], $_POST['tipo_conta'], $is_economia)) {
+        if ($contaModel->atualizar($_POST['id'], $_POST['nome'], $_POST['saldo_inicial'], $_POST['tipo_conta'], $tipo_pote)) {
             $mensagem_sucesso = "Conta atualizada com sucesso! Redirecionando...";
             header("refresh:2;url=contas.php");
         } else {
@@ -61,6 +59,13 @@ require_once '../src/includes/header.php';
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
     <div class="md:col-span-1">
         
+        <?php if ($mensagem_sucesso): ?>
+            <div class='rounded-md bg-green-50 p-4 mb-4 text-sm text-green-700'><?php echo $mensagem_sucesso; ?></div>
+        <?php endif; ?>
+        <?php if ($mensagem_erro): ?>
+            <div class='rounded-md bg-red-50 p-4 mb-4 text-sm text-red-700'><?php echo $mensagem_erro; ?></div>
+        <?php endif; ?>
+
         <div class="bg-white p-6 shadow rounded-lg">
             
             <form action="conta-editar.php?id=<?php echo $id; ?>" method="POST">
@@ -70,33 +75,34 @@ require_once '../src/includes/header.php';
                 <div class="mb-4">
                     <label for="nome" class="block text-sm font-medium text-gray-700">Nome da Conta</label>
                     <input type="text" name="nome" id="nome" required 
-                           value="<?php echo htmlspecialchars($conta['nome']); ?>"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                           value="<?php echo htmlspecialchars($conta['nome']); ?>" class="mt-1 input-form">
                 </div>
                 
                 <div class="mb-4">
                     <label for="saldo_inicial" class="block text-sm font-medium text-gray-700">Saldo Inicial (R$)</label>
                     <input type="number" name="saldo_inicial" id="saldo_inicial" step="0.01" required
-                           value="<?php echo htmlspecialchars($conta['saldo_inicial']); ?>"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                           value="<?php echo htmlspecialchars($conta['saldo_inicial']); ?>" class="mt-1 input-form">
                 </div>
 
                 <div class="mb-4">
                     <label for="tipo_conta" class="block text-sm font-medium text-gray-700">Tipo (Opcional)</label>
                     <input type="text" name="tipo_conta" id="tipo_conta" 
-                           value="<?php echo htmlspecialchars($conta['tipo_conta']); ?>"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                           value="<?php echo htmlspecialchars($conta['tipo_conta']); ?>" class="mt-1 input-form">
                 </div>
                 
                 <div class="mb-4">
-                    <div class="flex items-center">
-                        <input type="checkbox" name="is_economia" id="is_economia" value="1"
-                               <?php echo ($conta['is_economia'] == 1) ? 'checked' : ''; ?>
-                               class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                        <label for="is_economia" class="ml-2 block text-sm font-medium text-gray-900">
-                            É uma conta de Economia?
-                        </label>
-                    </div>
+                    <label for="tipo_pote" class="block text-sm font-medium text-gray-700">Qual o "Pote" desta conta?</label>
+                    <select name="tipo_pote" id="tipo_pote" required class="mt-1 input-form">
+                        <option value="trabalho" <?php echo ($conta['tipo_pote'] == 'trabalho') ? 'selected' : ''; ?>>
+                            Trabalho / Dia-a-dia
+                        </option>
+                        <option value="economia" <?php echo ($conta['tipo_pote'] == 'economia') ? 'selected' : ''; ?>>
+                            Economias
+                        </option>
+                        <option value="emprestimos" <?php echo ($conta['tipo_pote'] == 'emprestimos') ? 'selected' : ''; ?>>
+                            Empréstimos / Dívidas a Receber
+                        </option>
+                    </select>
                 </div>
 
                 <div class="flex justify-between items-center">
@@ -112,7 +118,24 @@ require_once '../src/includes/header.php';
         </div>
     </div>
     
+    <div class="md:col-span-2">
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+            <p class="text-sm text-yellow-700">
+                <strong>Atenção:</strong> O 'Saldo Inicial' é a base de todo o cálculo. Defina aqui o seu saldo (ou dívida) no momento em que você <strong>começou</strong> a usar o sistema.
+                <br>Para cartões de crédito ou financiamentos, use um valor negativo (ex: <strong>-1500.00</strong>).
+            </p>
+        </div>
     </div>
+</div>
+
+<style>
+    .input-form {
+        width: 100%;
+        border-radius: 0.375rem;
+        border: 1px solid #D1D5DB; /* border-gray-300 */
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+    }
+</style>
 
 <?php
 // 4. Incluir o rodapé

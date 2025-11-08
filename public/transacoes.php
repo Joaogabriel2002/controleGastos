@@ -13,8 +13,8 @@ $conn = $db->getConnection();
 
 $transacaoModel = new Transacao($conn);
 $categoriaModel = new Categoria($conn);
-$contaModel = new Conta($conn); 
-$pessoaModel = new Pessoa($conn); 
+$contaModel = new Conta($conn);
+$pessoaModel = new Pessoa($conn);
 
 $mensagem_sucesso = '';
 $mensagem_erro = '';
@@ -22,36 +22,29 @@ $mensagem_erro = '';
 // 2.1. VERIFICA SE É PARA SALVAR
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['salvar_transacao'])) {
     
-    // Validação básica (Campos de Origem)
     if (empty($_POST['descricao']) || empty($_POST['valor']) || 
         empty($_POST['data_vencimento']) || empty($_POST['conta_id'])) {
         
         $mensagem_erro = "Por favor, preencha Descrição, Valor, Data e Conta de Origem.";
     
     } else {
-        // *** NOVA LÓGICA DE TRANSFERÊNCIA ***
-        
-        // Se a "Conta de Destino" foi preenchida, é uma transferência
         if (!empty($_POST['destino_conta_id'])) {
-            
-            // Validação de transferência
+            // É uma Transferência
             if ($_POST['conta_id'] == $_POST['destino_conta_id']) {
                 $mensagem_erro = "A conta de Origem e Destino não podem ser a mesma.";
             } else {
-                // Chama um novo método no Model
                 if ($transacaoModel->salvarTransferencia($_POST)) {
                     $mensagem_sucesso = "Transferência salva com sucesso!";
                 } else {
-                    $mensagem_erro = "Erro ao salvar a transferência.";
+                    $mensagem_erro = "Erro ao salvar a transferência. (Verifique se a categoria 'Transferência' existe)";
                 }
             }
-            
         } else {
-            // Lançamento normal (Entrada ou Saída)
+            // É um Lançamento Normal
             if (empty($_POST['tipo']) || empty($_POST['categoria_id'])) {
                  $mensagem_erro = "Para um lançamento normal, 'Tipo' e 'Categoria' são obrigatórios.";
             } else {
-                if ($transacaoModel->salvar($_POST)) { // O método salvar() antigo
+                if ($transacaoModel->salvar($_POST)) {
                     $mensagem_sucesso = "Lançamento salvo com sucesso!";
                 } else {
                     $mensagem_erro = "Erro ao salvar o lançamento.";
@@ -77,12 +70,11 @@ if (isset($_GET['efetivar_id'])) {
 
 // 3. Buscar dados
 $listaCategorias = $categoriaModel->buscarTodas();
-$listaContas = $contaModel->buscarTodas('todas'); // Puxa TODAS as contas (Trabalho e Economia)
+$listaContas = $contaModel->buscarTodas('todas'); // Puxa TODAS as contas (Trabalho, Economia, Empréstimos)
 $listaPessoas = $pessoaModel->buscarTodas(); 
-$listaTransacoes = $transacaoModel->buscarTodasComDetalhes();
 
 // 4. Incluir o topo da página
-$tituloPagina = "Lançamentos";
+$tituloPagina = "Novo Lançamento";
 require_once '../src/includes/header.php'; 
 ?>
 
@@ -100,7 +92,7 @@ require_once '../src/includes/header.php';
 
 
 <div class="bg-white p-6 shadow rounded-lg mb-6">
-    <h2 class="text-xl font-semibold mb-4">Novo Lançamento</h2>
+    <h2 class="text-xl font-semibold mb-4">Novo Lançamento / Transferência</h2>
     
     <form action="transacoes.php" method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <input type="hidden" name="salvar_transacao" value="1">
@@ -129,7 +121,7 @@ require_once '../src/includes/header.php';
                 <?php foreach ($listaContas as $conta): ?>
                     <option value="<?php echo $conta['id']; ?>">
                         <?php echo htmlspecialchars($conta['nome']); ?>
-                        (<?php echo $conta['is_economia'] ? 'Economia' : 'Trabalho'; ?>)
+                        (<?php echo htmlspecialchars(ucfirst($conta['tipo_pote'])); ?>)
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -142,7 +134,7 @@ require_once '../src/includes/header.php';
                 <?php foreach ($listaContas as $conta): ?>
                     <option value="<?php echo $conta['id']; ?>">
                         <?php echo htmlspecialchars($conta['nome']); ?>
-                        (<?php echo $conta['is_economia'] ? 'Economia' : 'Trabalho'; ?>)
+                        (<?php echo htmlspecialchars(ucfirst($conta['tipo_pote'])); ?>)
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -206,20 +198,25 @@ document.addEventListener('DOMContentLoaded', function() {
     const camposNormais = document.getElementById('campos_normais');
     
     function toggleCamposNormais() {
-        if (destinoSelect.value) { // Se uma conta de destino for selecionada
-            camposNormais.style.display = 'none'; // Esconde os campos
+        if (destinoSelect.value) { 
+            camposNormais.style.display = 'none'; 
         } else {
-            camposNormais.style.display = 'grid'; // Mostra os campos
+            camposNormais.style.display = 'grid'; 
         }
     }
-    
-    // Verifica no carregamento da página (caso o formulário recarregue com erro)
     toggleCamposNormais();
-    
-    // Verifica toda vez que o usuário muda o select
     destinoSelect.addEventListener('change', toggleCamposNormais);
 });
 </script>
+
+<style>
+    .input-form {
+        width: 100%;
+        border-radius: 0.375rem;
+        border: 1px solid #D1D5DB;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    }
+</style>
 
 <?php
 // 5. Incluir o rodapé

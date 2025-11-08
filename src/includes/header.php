@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Controle de Gastos</title>
+    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💸</text></svg>">
+    
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="h-full">
@@ -22,16 +25,18 @@
                                 // Pega o nome do arquivo atual (ex: "categorias.php")
                                 $pagina_atual = basename($_SERVER['PHP_SELF']);
                                 
-                               $links = [
+                                // *** O ARRAY DE LINKS ATUALIZADO ***
+                                // *** O ARRAY DE LINKS ATUALIZADO ***
+                                $links = [
                                     'index.php' => 'Dashboard',
                                     'economias.php' => 'Economias',
-                                    'calendario.php' => 'Calendário', 
+                                    'emprestimos.php' => 'Empréstimos', // <-- NOVO LINK
+                                    // 'calendario.php' => 'Calendário', 
                                     'transacoes.php' => 'Lançamentos',
-                                    'relatorio.php' => 'Relatório',
-                                    'graficos.php' => 'Gráficos', // <-- NOVO LINK
-                                    'categorias.php' => 'Categorias',
-                                    'contas.php' => 'Contas',
-                                    'pessoas.php' => 'Pessoas'
+                                    'ultimos.php' => 'Últimos Lançamentos',
+                                    'relatorio.php' => 'Gerenciamento Mensal',
+                                    'graficos.php' => 'Gráficos',
+                                    'outros.php' => 'Outros'
                                 ];
 
                                 foreach ($links as $url => $titulo) {
@@ -57,5 +62,4 @@
 
     <main>
         <div class="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8">
-        
-
+    
